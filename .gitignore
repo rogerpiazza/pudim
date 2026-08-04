@@ -1,0 +1,14 @@
+# NUNCA versione a chave service_role do Supabase. Ela nunca deve existir
+# neste projeto — nem em arquivo .env, nem hardcoded em lugar nenhum.
+# O frontend usa exclusivamente a chave "anon" (pública, ok versionar).
+.env
+.env.local
+.env.*.local
+service_role*
+*.pem
+*.key
+
+# Sistema / editor
+.DS_Store
+Thumbs.db
+.vscode/
