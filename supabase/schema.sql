@@ -101,6 +101,7 @@ create table public.tamanhos (
   gramas_massa numeric(10,2) not null check (gramas_massa > 0),
   gramas_calda numeric(10,2) not null check (gramas_calda > 0),
   preco_venda numeric(10,2) not null check (preco_venda >= 0),
+  custo_embalagem numeric(10,2) not null default 0 check (custo_embalagem >= 0),
   created_at timestamptz not null default now(),
   unique (user_id, nome)
 );
@@ -340,6 +341,7 @@ base as (
     t.gramas_massa,
     t.gramas_calda,
     t.preco_venda,
+    t.custo_embalagem,
     fc.custo_g_massa,
     fc.custo_g_calda,
     (fc.energia + fc.gas + fc.agua) as indireto_total,
@@ -357,17 +359,20 @@ select
   *,
   (gramas_massa * custo_g_massa)
     + (gramas_calda * custo_g_calda)
-    + ((gramas_massa + gramas_calda) * custo_indireto_g) as custo_unitario,
+    + ((gramas_massa + gramas_calda) * custo_indireto_g)
+    + custo_embalagem as custo_unitario,
   preco_venda - (
     (gramas_massa * custo_g_massa)
     + (gramas_calda * custo_g_calda)
     + ((gramas_massa + gramas_calda) * custo_indireto_g)
+    + custo_embalagem
   ) as margem_reais,
   case when preco_venda > 0 then
     (preco_venda - (
       (gramas_massa * custo_g_massa)
       + (gramas_calda * custo_g_calda)
       + ((gramas_massa + gramas_calda) * custo_indireto_g)
+      + custo_embalagem
     )) / preco_venda * 100
   else 0 end as margem_pct
 from base;

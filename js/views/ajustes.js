@@ -78,9 +78,13 @@ export async function renderAjustes(container) {
               <label class="form-label">Gramas de calda</label>
               <input type="number" id="tam-calda" min="0" step="1">
             </div>
-            <div class="form-group full">
+            <div class="form-group">
               <label class="form-label">Preço de venda (R$)</label>
               <input type="number" id="tam-preco" min="0" step="0.01">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Custo da embalagem (R$)</label>
+              <input type="number" id="tam-embalagem" min="0" step="0.01" value="0">
             </div>
             <div class="form-actions">
               <button class="btn-primary" id="tam-salvar">Salvar tamanho</button>
@@ -266,20 +270,23 @@ function setupTamanhosSection(container) {
     const massa = Number(container.querySelector('#tam-massa').value);
     const calda = Number(container.querySelector('#tam-calda').value);
     const preco = Number(container.querySelector('#tam-preco').value);
+    const embalagem = Number(container.querySelector('#tam-embalagem').value) || 0;
 
     if (!nome) { showToast('Informe o nome do tamanho', 'error'); return; }
     if (!(massa > 0)) { showToast('Gramas de massa deve ser maior que zero', 'error'); return; }
     if (!(calda > 0)) { showToast('Gramas de calda deve ser maior que zero', 'error'); return; }
     if (!(preco >= 0)) { showToast('Preço de venda inválido', 'error'); return; }
+    if (!(embalagem >= 0)) { showToast('Custo da embalagem inválido', 'error'); return; }
 
     try {
-      await createTamanho({ nome, gramas_massa: massa, gramas_calda: calda, preco_venda: preco });
+      await createTamanho({ nome, gramas_massa: massa, gramas_calda: calda, preco_venda: preco, custo_embalagem: embalagem });
       showToast('Tamanho salvo');
       formPanel.classList.remove('show');
       container.querySelector('#tam-nome').value = '';
       container.querySelector('#tam-massa').value = '';
       container.querySelector('#tam-calda').value = '';
       container.querySelector('#tam-preco').value = '';
+      container.querySelector('#tam-embalagem').value = '0';
       await loadTamanhos(container);
     } catch (err) {
       showError(err, 'Não foi possível salvar o tamanho');
@@ -302,7 +309,7 @@ async function loadTamanhos(container) {
       <div class="size-card" data-id="${t.id}">
         <div>
           <div class="size-name">${escapeHtml(t.nome)}</div>
-          <div class="size-weights">${t.gramas_massa}g massa + ${t.gramas_calda}g calda</div>
+          <div class="size-weights">${t.gramas_massa}g massa + ${t.gramas_calda}g calda &middot; embalagem ${fmtMoeda(t.custo_embalagem)}</div>
         </div>
         <div style="display:flex;align-items:center;gap:12px">
           <div class="size-price">${fmtMoeda(t.preco_venda)}</div>

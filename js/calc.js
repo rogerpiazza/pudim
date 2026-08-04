@@ -57,8 +57,8 @@ export function calcularGramasProduzidas(producao, tamanhosById) {
   return total;
 }
 
-export function calcularCustoTamanho({ gramasMassa, gramasCalda, custoGMassa, custoGCalda, custoIndiretoG }) {
-  return (gramasMassa * custoGMassa) + (gramasCalda * custoGCalda) + ((gramasMassa + gramasCalda) * custoIndiretoG);
+export function calcularCustoTamanho({ gramasMassa, gramasCalda, custoGMassa, custoGCalda, custoIndiretoG, custoEmbalagem = 0 }) {
+  return (gramasMassa * custoGMassa) + (gramasCalda * custoGCalda) + ((gramasMassa + gramasCalda) * custoIndiretoG) + Number(custoEmbalagem || 0);
 }
 
 export function calcularMargem(precoVenda, custoUnitario) {

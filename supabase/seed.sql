@@ -40,10 +40,11 @@ insert into public.ingredientes (id, user_id, nome, preco_pacote, qtd_pacote, un
   ('00000000-0000-0000-0000-000000000004', 'SEU_USER_ID_AQUI', 'Açúcar', 4.00, 1000, 'g', null);
 
 -- ---- Tamanhos -----------------------------------------------------------------
-insert into public.tamanhos (id, user_id, nome, gramas_massa, gramas_calda, preco_venda) values
-  ('00000000-0000-0000-0000-000000000011', 'SEU_USER_ID_AQUI', '150g', 130, 20, 8.00),
-  ('00000000-0000-0000-0000-000000000012', 'SEU_USER_ID_AQUI', '550g', 480, 70, 25.00),
-  ('00000000-0000-0000-0000-000000000013', 'SEU_USER_ID_AQUI', '1100g', 960, 140, 45.00);
+-- custo_embalagem: valor fixo da embalagem daquele tamanho (não é rateado por peso)
+insert into public.tamanhos (id, user_id, nome, gramas_massa, gramas_calda, preco_venda, custo_embalagem) values
+  ('00000000-0000-0000-0000-000000000011', 'SEU_USER_ID_AQUI', '150g', 130, 20, 8.00, 1.50),
+  ('00000000-0000-0000-0000-000000000012', 'SEU_USER_ID_AQUI', '550g', 480, 70, 25.00, 2.50),
+  ('00000000-0000-0000-0000-000000000013', 'SEU_USER_ID_AQUI', '1100g', 960, 140, 45.00, 4.00);
 
 -- ---- Fornada de teste -----------------------------------------------------
 insert into public.fornadas (id, user_id, data, tempo_forno_min, tempo_fogao_min, litros_agua, rendimento_calda_g, observacao) values

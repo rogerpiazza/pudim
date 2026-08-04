@@ -238,9 +238,10 @@ async function openForm(container, formPanel) {
     const cards = producao.map((p) => {
       const t = tamanhosById.get(p.tamanho_id);
       if (!t) return '';
+      const custoEmbalagem = Number(t.custo_embalagem) || 0;
       const custoUnitario = calcularCustoTamanho({
         gramasMassa: Number(t.gramas_massa), gramasCalda: Number(t.gramas_calda),
-        custoGMassa: massa.custoPorG, custoGCalda: calda.custoPorG, custoIndiretoG,
+        custoGMassa: massa.custoPorG, custoGCalda: calda.custoPorG, custoIndiretoG, custoEmbalagem,
       });
       const { margemReais, margemPct } = calcularMargem(Number(t.preco_venda), custoUnitario);
       const cls = margemReais >= 0 ? 'positive' : 'negative';
@@ -251,6 +252,7 @@ async function openForm(container, formPanel) {
             <span class="margin-size">${escapeHtml(t.nome)}</span>
             <span class="margin-detail">${t.gramas_massa}g massa + ${t.gramas_calda}g calda</span>
           </div>
+          <div class="margin-row"><span>Embalagem</span><span>${fmtMoeda(custoEmbalagem)}</span></div>
           <div class="margin-row"><span>Custo unitário</span><span>${fmtMoeda(custoUnitario)}</span></div>
           <div class="margin-row"><span>Preço de venda</span><span>${fmtMoeda(t.preco_venda)}</span></div>
           <div class="margin-result"><span>Margem</span><span class="${resultCls}">${fmtMoeda(margemReais)} <small>(${fmtNumero(margemPct, 1)}%)</small></span></div>
@@ -400,6 +402,7 @@ async function loadFornadaDetail(card) {
                 <span class="margin-size">${escapeHtml(p.tamanho_nome)} <small style="color:var(--text-3);font-weight:400">×${p.qtd_produzida}</small></span>
                 <span class="margin-detail">${p.gramas_massa}g massa + ${p.gramas_calda}g calda</span>
               </div>
+              <div class="margin-row"><span>Embalagem</span><span>${fmtMoeda(p.custo_embalagem)}</span></div>
               <div class="margin-row"><span>Custo unitário</span><span>${fmtMoeda(p.custo_unitario)}</span></div>
               <div class="margin-row"><span>Preço de venda</span><span>${fmtMoeda(p.preco_venda)}</span></div>
               <div class="margin-result"><span>Margem</span><span class="${resultCls}">${fmtMoeda(p.margem_reais)} <small>(${fmtNumero(p.margem_pct, 1)}%)</small></span></div>
