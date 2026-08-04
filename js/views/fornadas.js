@@ -2,19 +2,17 @@ import { listFornadas, getFornadaDetalhe, createFornadaCompleta } from '../api/f
 import { listIngredientes } from '../api/ingredientes.js';
 import { listTamanhos } from '../api/tamanhos.js';
 import { getConfig } from '../api/configCustos.js';
+import { listReceitaPadrao } from '../api/receitaPadrao.js';
 import {
-  calcularComponente, calcularIndiretos, calcularGramasProduzidas,
-  calcularCustoTamanho, calcularMargem, fmtMoeda, fmtNumero,
+  calcularReceitaPadrao, calcularIndiretos, calcularGramasProduzidas,
+  calcularCustoTamanho, calcularMargem, gerarSugestoesProducao, fmtMoeda, fmtNumero,
 } from '../calc.js';
 import { showToast, showError } from '../toast.js';
 
 let ingredientesCache = [];
 let tamanhosCache = [];
 let configCache = null;
-let rowCounter = 0;
-let itensMassa = [];
-let itensCalda = [];
-let producaoRows = [];
+let receitaPadraoCache = [];
 
 export async function renderFornadas(container) {
   container.innerHTML = `
@@ -42,25 +40,31 @@ export async function renderFornadas(container) {
 async function openForm(container, formPanel) {
   formPanel.innerHTML = '<div class="loading-state">Carregando…</div>';
   try {
-    [ingredientesCache, tamanhosCache, configCache] = await Promise.all([
-      listIngredientes(), listTamanhos(), getConfig(),
+    [ingredientesCache, tamanhosCache, configCache, receitaPadraoCache] = await Promise.all([
+      listIngredientes(), listTamanhos(), getConfig(), listReceitaPadrao(),
     ]);
   } catch (err) {
     showError(err, 'Não foi possível carregar dados para o formulário');
     return;
   }
 
-  if (!ingredientesCache.length || !tamanhosCache.length) {
-    formPanel.innerHTML = `<div class="card"><div class="empty-action">Cadastre ao menos um ingrediente e um tamanho em Ajustes antes de lançar uma fornada.</div></div>`;
+  if (!tamanhosCache.length) {
+    formPanel.innerHTML = `<div class="card"><div class="empty-action">Cadastre ao menos um tamanho em Ajustes antes de lançar uma fornada.</div></div>`;
+    return;
+  }
+  if (!receitaPadraoCache.length) {
+    formPanel.innerHTML = `<div class="card"><div class="empty-action">Cadastre a receita padrão em Ajustes (os ingredientes fixos da massa e da calda) antes de lançar uma fornada.</div></div>`;
     return;
   }
   if (!configCache) {
-    configCache = { tarifa_kwh: 0, potencia_forno_w: 0, tarifa_agua_m3: 0, preco_botijao: 0, peso_botijao_kg: 13, consumo_gas_kg_h: 0 };
+    configCache = {
+      tarifa_kwh: 0, potencia_forno_w: 0, tarifa_agua_m3: 0, preco_botijao: 0, peso_botijao_kg: 13, consumo_gas_kg_h: 0,
+      tempo_forno_padrao_min: 0, tempo_fogao_padrao_min: 0, litros_agua_padrao: 0,
+    };
   }
 
-  itensMassa = [];
-  itensCalda = [];
-  producaoRows = [];
+  const ingredientesById = new Map(ingredientesCache.map((i) => [i.id, i]));
+  let sugestoesAtuais = { semSobra: [], comSobra: [] };
 
   formPanel.innerHTML = `
     <div class="card">
@@ -71,20 +75,20 @@ async function openForm(container, formPanel) {
           <input type="date" id="f-data" value="${new Date().toISOString().slice(0, 10)}">
         </div>
         <div class="form-group">
-          <label class="form-label">Rendimento real da calda (g) — opcional</label>
-          <input type="number" id="f-rendimento" min="0" step="0.1" placeholder="ex: 90">
+          <label class="form-label">Quantas receitas você fez?</label>
+          <input type="number" id="f-num-receitas" min="1" step="1" value="1">
         </div>
         <div class="form-group">
           <label class="form-label">Tempo de forno (min)</label>
-          <input type="number" id="f-tempo-forno" min="0" value="0">
+          <input type="number" id="f-tempo-forno" min="0" step="1" value="0">
         </div>
         <div class="form-group">
           <label class="form-label">Tempo de fogão (min)</label>
-          <input type="number" id="f-tempo-fogao" min="0" value="0">
+          <input type="number" id="f-tempo-fogao" min="0" step="1" value="0">
         </div>
         <div class="form-group">
           <label class="form-label">Água usada (L)</label>
-          <input type="number" id="f-litros-agua" min="0" value="0">
+          <input type="number" id="f-litros-agua" min="0" step="0.1" value="0">
         </div>
         <div class="form-group full">
           <label class="form-label">Observação</label>
@@ -92,22 +96,21 @@ async function openForm(container, formPanel) {
         </div>
       </div>
 
+      <div class="info-pills" id="receita-info-pills"></div>
+
       <div class="detail-section">
-        <h4>Massa</h4>
-        <div id="rows-massa"></div>
-        <button class="btn-secondary" id="add-massa" type="button">+ ingrediente</button>
+        <h4>Sugestões sem sobra</h4>
+        <div id="sugestoes-sem-sobra"></div>
+      </div>
+      <div class="detail-section">
+        <h4>Sugestões com sobra (melhor faturamento)</h4>
+        <div id="sugestoes-com-sobra"></div>
       </div>
 
       <div class="detail-section">
-        <h4>Calda</h4>
-        <div id="rows-calda"></div>
-        <button class="btn-secondary" id="add-calda" type="button">+ ingrediente</button>
-      </div>
-
-      <div class="detail-section">
-        <h4>Produção (quantos pudins saíram de cada tamanho)</h4>
-        <div id="rows-producao"></div>
-        <button class="btn-secondary" id="add-producao" type="button">+ tamanho</button>
+        <h4>Produção confirmada</h4>
+        <p style="font-size:12px;color:var(--text-2);margin-bottom:8px">Clique numa sugestão acima para preencher, ou ajuste manualmente.</p>
+        <div id="producao-inputs"></div>
       </div>
 
       <div class="detail-section" id="preview-section"></div>
@@ -119,106 +122,134 @@ async function openForm(container, formPanel) {
     </div>
   `;
 
-  const ingOptions = ingredientesCache.map((i) => `<option value="${i.id}" data-unidade="${i.unidade}">${escapeHtml(i.nome)}</option>`).join('');
-  const tamOptions = tamanhosCache.map((t) => `<option value="${t.id}">${escapeHtml(t.nome)}</option>`).join('');
+  // pré-preenche tempo/água com o padrão × 1 receita
+  formPanel.querySelector('#f-tempo-forno').value = configCache.tempo_forno_padrao_min || 0;
+  formPanel.querySelector('#f-tempo-fogao').value = configCache.tempo_fogao_padrao_min || 0;
+  formPanel.querySelector('#f-litros-agua').value = configCache.litros_agua_padrao || 0;
 
-  function itemRowHtml(rowId, componente) {
-    return `
-      <div class="item-row-form" data-row="${rowId}">
-        <div class="form-group">
-          <label class="form-label">Ingrediente</label>
-          <select class="row-ing">${ingOptions}</select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Qtd</label>
-          <input type="number" class="row-qtd" min="0" step="0.01" value="0">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Unid.</label>
-          <select class="row-unidade">
-            <option value="g">g</option>
-            <option value="ml">ml</option>
-            <option value="un">un</option>
-          </select>
-        </div>
-        <button class="icon-btn row-remove" type="button" title="Remover">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-        </button>
-      </div>
-    `;
+  const producaoInputsEl = formPanel.querySelector('#producao-inputs');
+  producaoInputsEl.innerHTML = tamanhosCache.map((t) => `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--border-light)">
+      <span style="font-size:14px;font-weight:500">${escapeHtml(t.nome)}</span>
+      <input type="number" class="prod-qtd" data-tamanho="${t.id}" min="0" step="1" value="0" style="width:80px;text-align:center">
+    </div>
+  `).join('');
+  producaoInputsEl.querySelectorAll('.prod-qtd').forEach((el) => el.addEventListener('input', renderPreviewMargem));
+
+  let numReceitasAnterior = null;
+  function preencherTemposPadrao() {
+    const n = Number(formPanel.querySelector('#f-num-receitas').value) || 1;
+    // só reajusta automaticamente se o usuário ainda não mexeu manualmente
+    // (evita sobrescrever um valor que ele já corrigiu à mão)
+    if (numReceitasAnterior !== null) {
+      const tForno = formPanel.querySelector('#f-tempo-forno');
+      const tFogao = formPanel.querySelector('#f-tempo-fogao');
+      const tAgua = formPanel.querySelector('#f-litros-agua');
+      const eraAuto = Number(tForno.value) === (configCache.tempo_forno_padrao_min || 0) * numReceitasAnterior
+        && Number(tFogao.value) === (configCache.tempo_fogao_padrao_min || 0) * numReceitasAnterior
+        && Number(tAgua.value) === (configCache.litros_agua_padrao || 0) * numReceitasAnterior;
+      if (eraAuto) {
+        tForno.value = (configCache.tempo_forno_padrao_min || 0) * n;
+        tFogao.value = (configCache.tempo_fogao_padrao_min || 0) * n;
+        tAgua.value = (configCache.litros_agua_padrao || 0) * n;
+      }
+    }
+    numReceitasAnterior = n;
   }
 
-  function producaoRowHtml(rowId) {
-    return `
-      <div class="item-row-form" data-row="${rowId}" style="grid-template-columns:2fr 1fr auto">
-        <div class="form-group">
-          <label class="form-label">Tamanho</label>
-          <select class="row-tamanho">${tamOptions}</select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Qtd produzida</label>
-          <input type="number" class="row-qtd-prod" min="0" step="1" value="0">
-        </div>
-        <button class="icon-btn row-remove" type="button" title="Remover">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-        </button>
-      </div>
-    `;
-  }
-
-  const rowsMassaEl = formPanel.querySelector('#rows-massa');
-  const rowsCaldaEl = formPanel.querySelector('#rows-calda');
-  const rowsProducaoEl = formPanel.querySelector('#rows-producao');
-
-  function addRow(container, html) {
-    const id = ++rowCounter;
-    const div = document.createElement('div');
-    div.innerHTML = html(id);
-    const rowEl = div.firstElementChild;
-    container.appendChild(rowEl);
-    rowEl.querySelector('.row-remove').addEventListener('click', () => {
-      rowEl.remove();
-      updatePreview();
-    });
-    rowEl.querySelectorAll('input, select').forEach((el) => el.addEventListener('input', updatePreview));
-    return rowEl;
-  }
-
-  formPanel.querySelector('#add-massa').addEventListener('click', () => addRow(rowsMassaEl, itemRowHtml));
-  formPanel.querySelector('#add-calda').addEventListener('click', () => addRow(rowsCaldaEl, itemRowHtml));
-  formPanel.querySelector('#add-producao').addEventListener('click', () => addRow(rowsProducaoEl, producaoRowHtml));
-
-  addRow(rowsMassaEl, itemRowHtml);
-  addRow(rowsCaldaEl, itemRowHtml);
-  addRow(rowsProducaoEl, producaoRowHtml);
-
-  ['#f-tempo-forno', '#f-tempo-fogao', '#f-litros-agua', '#f-rendimento'].forEach((sel) => {
-    formPanel.querySelector(sel).addEventListener('input', updatePreview);
-  });
-
-  function readItens(rowsEl, componente) {
-    return [...rowsEl.querySelectorAll('.item-row-form')].map((row) => ({
-      ingrediente_id: row.querySelector('.row-ing').value,
-      componente,
-      quantidade: Number(row.querySelector('.row-qtd').value) || 0,
-      unidade_informada: row.querySelector('.row-unidade').value,
-    })).filter((i) => i.quantidade > 0);
-  }
-
-  function readProducao(rowsEl) {
-    return [...rowsEl.querySelectorAll('.item-row-form')].map((row) => ({
-      tamanho_id: row.querySelector('.row-tamanho').value,
-      quantidade: Number(row.querySelector('.row-qtd-prod').value) || 0,
-    })).filter((p) => p.quantidade > 0);
-  }
-
-  function updatePreview() {
-    const itens = [...readItens(rowsMassaEl, 'massa'), ...readItens(rowsCaldaEl, 'calda')];
-    const producao = readProducao(rowsProducaoEl);
-    const rendimentoOverride = Number(formPanel.querySelector('#f-rendimento').value) || 0;
+  function getReceitaEIndiretos() {
+    const n = Math.max(1, Number(formPanel.querySelector('#f-num-receitas').value) || 1);
     const tempoForno = Number(formPanel.querySelector('#f-tempo-forno').value) || 0;
     const tempoFogao = Number(formPanel.querySelector('#f-tempo-fogao').value) || 0;
     const litrosAgua = Number(formPanel.querySelector('#f-litros-agua').value) || 0;
+    const receita = calcularReceitaPadrao(receitaPadraoCache, ingredientesById, n);
+    const indiretos = calcularIndiretos({ tempoFornoMin: tempoForno, tempoFogaoMin: tempoFogao, litrosAgua }, configCache);
+    return { n, receita, indiretos };
+  }
+
+  function renderSugestaoCard(combo, groupId, idx) {
+    const itensTxt = combo.itens.map((it) => `${it.quantidade}× ${escapeHtml(it.tamanho.nome)}`).join(' + ');
+    const temSobra = combo.sobraMassa > 0.5 || combo.sobraCalda > 0.5;
+    const sobraTxt = temSobra
+      ? `<div class="margin-row"><span>Sobra</span><span>${fmtNumero(combo.sobraMassa, 0)}g massa, ${fmtNumero(combo.sobraCalda, 0)}g calda</span></div>`
+      : '';
+    return `
+      <div class="margin-card positive sugestao-card" data-group="${groupId}" data-idx="${idx}" style="cursor:pointer">
+        <div class="margin-head">
+          <span class="margin-size">${itensTxt}</span>
+          <span class="margin-detail">${combo.totalPudins} pudim${combo.totalPudins !== 1 ? 's' : ''}</span>
+        </div>
+        ${sobraTxt}
+        <div class="margin-row"><span>Custo total</span><span>${fmtMoeda(combo.custoTotal)}</span></div>
+        <div class="margin-result"><span>Faturamento</span><span class="pos">${fmtMoeda(combo.faturamento)} <small>(lucro ${fmtMoeda(combo.margem)})</small></span></div>
+      </div>
+    `;
+  }
+
+  function aplicarCombo(combo) {
+    const qtdPorTamanho = new Map(combo.itens.map((it) => [it.tamanho_id, it.quantidade]));
+    producaoInputsEl.querySelectorAll('.prod-qtd').forEach((el) => {
+      el.value = qtdPorTamanho.get(el.dataset.tamanho) || 0;
+    });
+    renderPreviewMargem();
+  }
+
+  function renderSugestoes() {
+    const { receita, indiretos } = getReceitaEIndiretos();
+    const infoPills = formPanel.querySelector('#receita-info-pills');
+    infoPills.innerHTML = `
+      <span class="info-pill">Massa produzida: <strong>${fmtNumero(receita.massa.pesoTotal, 0)}g</strong></span>
+      <span class="info-pill">Calda produzida: <strong>${fmtNumero(receita.calda.pesoTotal, 0)}g</strong></span>
+      <span class="info-pill">Custo/g massa: <strong>${fmtMoeda(receita.massa.custoPorG)}</strong></span>
+      <span class="info-pill">Custo/g calda: <strong>${fmtMoeda(receita.calda.custoPorG)}</strong></span>
+      <span class="info-pill">Indiretos: <strong>${fmtMoeda(indiretos.total)}</strong></span>
+    `;
+
+    if (receita.massa.pesoTotal <= 0) {
+      formPanel.querySelector('#sugestoes-sem-sobra').innerHTML = '<div class="empty-action">Informe quantas receitas para ver sugestões.</div>';
+      formPanel.querySelector('#sugestoes-com-sobra').innerHTML = '';
+      sugestoesAtuais = { semSobra: [], comSobra: [] };
+      return;
+    }
+
+    sugestoesAtuais = gerarSugestoesProducao({
+      pesoMassaTotal: receita.massa.pesoTotal,
+      pesoCaldaTotal: receita.calda.pesoTotal,
+      custoGMassa: receita.massa.custoPorG,
+      custoGCalda: receita.calda.custoPorG,
+      indiretoTotal: indiretos.total,
+      tamanhos: tamanhosCache,
+    });
+
+    const semSobraEl = formPanel.querySelector('#sugestoes-sem-sobra');
+    const comSobraEl = formPanel.querySelector('#sugestoes-com-sobra');
+
+    semSobraEl.innerHTML = sugestoesAtuais.semSobra.length
+      ? `<div class="margin-cards">${sugestoesAtuais.semSobra.map((c, i) => renderSugestaoCard(c, 'sem', i)).join('')}</div>`
+      : '<div class="empty-action">Nenhuma combinação usa 100% da massa e calda com esses tamanhos. Veja as opções com sobra abaixo.</div>';
+
+    comSobraEl.innerHTML = sugestoesAtuais.comSobra.length
+      ? `<div class="margin-cards">${sugestoesAtuais.comSobra.map((c, i) => renderSugestaoCard(c, 'com', i)).join('')}</div>`
+      : '<div class="empty-action">Nenhuma outra combinação encontrada.</div>';
+
+    formPanel.querySelectorAll('.sugestao-card').forEach((cardEl) => {
+      cardEl.addEventListener('click', () => {
+        const grupo = cardEl.dataset.group === 'sem' ? sugestoesAtuais.semSobra : sugestoesAtuais.comSobra;
+        const combo = grupo[Number(cardEl.dataset.idx)];
+        if (combo) {
+          formPanel.querySelectorAll('.sugestao-card').forEach((c) => c.style.outline = '');
+          cardEl.style.outline = `2px solid var(--accent)`;
+          aplicarCombo(combo);
+        }
+      });
+    });
+  }
+
+  function renderPreviewMargem() {
+    const { receita, indiretos } = getReceitaEIndiretos();
+    const producao = [...producaoInputsEl.querySelectorAll('.prod-qtd')]
+      .map((el) => ({ tamanho_id: el.dataset.tamanho, quantidade: Number(el.value) || 0 }))
+      .filter((p) => p.quantidade > 0);
 
     const previewEl = formPanel.querySelector('#preview-section');
     if (!producao.length) {
@@ -226,12 +257,7 @@ async function openForm(container, formPanel) {
       return;
     }
 
-    const ingredientesById = new Map(ingredientesCache.map((i) => [i.id, i]));
     const tamanhosById = new Map(tamanhosCache.map((t) => [t.id, t]));
-
-    const massa = calcularComponente(itens, ingredientesById, 'massa');
-    const calda = calcularComponente(itens, ingredientesById, 'calda', rendimentoOverride);
-    const indiretos = calcularIndiretos({ tempoFornoMin: tempoForno, tempoFogaoMin: tempoFogao, litrosAgua }, configCache);
     const gramasProduzidas = calcularGramasProduzidas(producao, tamanhosById);
     const custoIndiretoG = gramasProduzidas > 0 ? indiretos.total / gramasProduzidas : 0;
 
@@ -241,7 +267,7 @@ async function openForm(container, formPanel) {
       const custoEmbalagem = Number(t.custo_embalagem) || 0;
       const custoUnitario = calcularCustoTamanho({
         gramasMassa: Number(t.gramas_massa), gramasCalda: Number(t.gramas_calda),
-        custoGMassa: massa.custoPorG, custoGCalda: calda.custoPorG, custoIndiretoG, custoEmbalagem,
+        custoGMassa: receita.massa.custoPorG, custoGCalda: receita.calda.custoPorG, custoIndiretoG, custoEmbalagem,
       });
       const { margemReais, margemPct } = calcularMargem(Number(t.preco_venda), custoUnitario);
       const cls = margemReais >= 0 ? 'positive' : 'negative';
@@ -249,7 +275,7 @@ async function openForm(container, formPanel) {
       return `
         <div class="margin-card ${cls}">
           <div class="margin-head">
-            <span class="margin-size">${escapeHtml(t.nome)}</span>
+            <span class="margin-size">${escapeHtml(t.nome)} <small style="color:var(--text-3);font-weight:400">×${p.quantidade}</small></span>
             <span class="margin-detail">${t.gramas_massa}g massa + ${t.gramas_calda}g calda</span>
           </div>
           <div class="margin-row"><span>Embalagem</span><span>${fmtMoeda(custoEmbalagem)}</span></div>
@@ -260,29 +286,45 @@ async function openForm(container, formPanel) {
       `;
     }).join('');
 
-    previewEl.innerHTML = `
-      <h4>Prévia de custo &amp; margem</h4>
-      <div class="info-pills">
-        <span class="info-pill">Custo/g massa: <strong>${fmtMoeda(massa.custoPorG)}</strong></span>
-        <span class="info-pill">Custo/g calda: <strong>${fmtMoeda(calda.custoPorG)}</strong></span>
-        <span class="info-pill">Indiretos: <strong>${fmtMoeda(indiretos.total)}</strong></span>
-      </div>
-      <div class="margin-cards">${cards}</div>
-    `;
+    previewEl.innerHTML = `<h4>Resumo da produção confirmada</h4><div class="margin-cards">${cards}</div>`;
   }
+
+  function recompute() {
+    preencherTemposPadrao();
+    renderSugestoes();
+    renderPreviewMargem();
+  }
+
+  formPanel.querySelector('#f-num-receitas').addEventListener('input', recompute);
+  ['#f-tempo-forno', '#f-tempo-fogao', '#f-litros-agua'].forEach((sel) => {
+    formPanel.querySelector(sel).addEventListener('input', () => { renderSugestoes(); renderPreviewMargem(); });
+  });
+
+  numReceitasAnterior = 1;
+  renderSugestoes();
 
   formPanel.querySelector('#f-cancelar').addEventListener('click', () => {
     formPanel.classList.remove('show');
   });
 
   formPanel.querySelector('#f-salvar').addEventListener('click', async () => {
-    const itens = [...readItens(rowsMassaEl, 'massa'), ...readItens(rowsCaldaEl, 'calda')];
-    const producao = readProducao(rowsProducaoEl);
+    const { n } = getReceitaEIndiretos();
+    const producao = [...producaoInputsEl.querySelectorAll('.prod-qtd')]
+      .map((el) => ({ tamanho_id: el.dataset.tamanho, quantidade: Number(el.value) || 0 }))
+      .filter((p) => p.quantidade > 0);
 
-    if (!itens.length) { showToast('Adicione ao menos um ingrediente', 'error'); return; }
-    if (!producao.length) { showToast('Informe a produção de ao menos um tamanho', 'error'); return; }
+    if (!producao.length) { showToast('Confirme a produção de ao menos um tamanho', 'error'); return; }
 
-    const rendimento = Number(formPanel.querySelector('#f-rendimento').value) || null;
+    const itens = receitaPadraoCache.map((r) => ({
+      ingrediente_id: r.ingrediente_id,
+      componente: r.componente,
+      quantidade: Number(r.quantidade_g) * n,
+      unidade_informada: 'g',
+    }));
+
+    const obsInput = formPanel.querySelector('#f-obs').value.trim();
+    const receitaNota = `${n} receita${n > 1 ? 's' : ''}`;
+    const observacao = obsInput ? `${obsInput} (${receitaNota})` : `(${receitaNota})`;
 
     const salvarBtn = formPanel.querySelector('#f-salvar');
     salvarBtn.disabled = true;
@@ -293,8 +335,8 @@ async function openForm(container, formPanel) {
           tempo_forno_min: Number(formPanel.querySelector('#f-tempo-forno').value) || 0,
           tempo_fogao_min: Number(formPanel.querySelector('#f-tempo-fogao').value) || 0,
           litros_agua: Number(formPanel.querySelector('#f-litros-agua').value) || 0,
-          rendimento_calda_g: rendimento,
-          observacao: formPanel.querySelector('#f-obs').value || null,
+          rendimento_calda_g: null,
+          observacao,
         },
         itens,
         producao,

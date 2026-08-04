@@ -258,9 +258,6 @@ main { flex: 1; overflow-y: auto; overflow-x: hidden; padding-bottom: 80px; min-
 .empty-action { text-align: center; padding: 24px; color: var(--text-3); font-size: 14px; }
 .loading-state { text-align: center; padding: 40px; color: var(--text-3); font-size: 14px; }
 
-.item-row-form { display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 8px; align-items: end; margin-bottom: 8px; }
-.item-row-form .form-group { gap: 4px; }
-@media (max-width: 480px) { .item-row-form { grid-template-columns: 1fr 1fr; } }
 
 .autocomplete-wrap { position: relative; }
 .autocomplete-list { position: absolute; top: 100%; left: 0; right: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-md); max-height: 180px; overflow-y: auto; z-index: 10; margin-top: 4px; display: none; }

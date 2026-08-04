@@ -77,6 +77,11 @@ create table public.config_custos (
   preco_botijao numeric(10,2) not null default 0 check (preco_botijao >= 0),
   peso_botijao_kg numeric(10,2) not null default 13 check (peso_botijao_kg > 0),
   consumo_gas_kg_h numeric(10,3) not null default 0 check (consumo_gas_kg_h >= 0),
+  -- tempo padrão de forno/fogão/água por "1 receita" — usado para pré-preencher
+  -- a Nova Fornada quando você informa quantas receitas fez (ajustável depois)
+  tempo_forno_padrao_min numeric(10,2) not null default 0 check (tempo_forno_padrao_min >= 0),
+  tempo_fogao_padrao_min numeric(10,2) not null default 0 check (tempo_fogao_padrao_min >= 0),
+  litros_agua_padrao numeric(10,2) not null default 0 check (litros_agua_padrao >= 0),
   updated_at timestamptz not null default now()
 );
 
@@ -115,6 +120,29 @@ create policy "tamanhos_insert" on public.tamanhos
 create policy "tamanhos_update" on public.tamanhos
   for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "tamanhos_delete" on public.tamanhos
+  for delete using (auth.uid() = user_id);
+
+-- ----------------------------------------------------------------------------
+-- 3.1 Receita padrão (a receita fixa, sempre a mesma — usada para calcular
+-- automaticamente o custo de "N receitas" na tela de Nova Fornada)
+-- ----------------------------------------------------------------------------
+create table public.receita_padrao_itens (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) default auth.uid(),
+  ingrediente_id uuid not null references public.ingredientes(id),
+  componente text not null check (componente in ('massa','calda')),
+  quantidade_g numeric(10,3) not null check (quantidade_g > 0)
+);
+
+alter table public.receita_padrao_itens enable row level security;
+
+create policy "receita_padrao_itens_select" on public.receita_padrao_itens
+  for select using (auth.uid() = user_id);
+create policy "receita_padrao_itens_insert" on public.receita_padrao_itens
+  for insert with check (auth.uid() = user_id);
+create policy "receita_padrao_itens_update" on public.receita_padrao_itens
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "receita_padrao_itens_delete" on public.receita_padrao_itens
   for delete using (auth.uid() = user_id);
 
 -- ----------------------------------------------------------------------------
@@ -256,6 +284,21 @@ select
     else i.preco_pacote / i.qtd_pacote
   end as custo_por_g
 from public.ingredientes i;
+
+-- 9.1.1 Custo de cada item da receita padrão (a receita fixa)
+create or replace view public.vw_receita_padrao_custo
+with (security_invoker = true) as
+select
+  rp.id,
+  rp.user_id,
+  rp.ingrediente_id,
+  ic.nome as ingrediente_nome,
+  rp.componente,
+  rp.quantidade_g,
+  ic.custo_por_g,
+  rp.quantidade_g * ic.custo_por_g as custo_item
+from public.receita_padrao_itens rp
+join public.vw_ingredientes_custo ic on ic.id = rp.ingrediente_id;
 
 -- 9.2 Custo de cada item lançado numa fornada (já convertendo un -> g)
 create or replace view public.vw_fornada_itens_custo
@@ -400,6 +443,7 @@ grant select, insert, update, delete on
   public.ingredientes,
   public.config_custos,
   public.tamanhos,
+  public.receita_padrao_itens,
   public.fornadas,
   public.fornada_itens,
   public.fornada_producao,
@@ -409,6 +453,7 @@ to authenticated;
 
 grant select on
   public.vw_ingredientes_custo,
+  public.vw_receita_padrao_custo,
   public.vw_fornada_itens_custo,
   public.vw_fornada_componentes,
   public.vw_fornada_custos,

@@ -67,6 +67,101 @@ export function calcularMargem(precoVenda, custoUnitario) {
   return { margemReais, margemPct };
 }
 
+// itensReceita: [{ ingrediente_id, componente, quantidade_g }] (a receita padrão)
+// ingredientesById: Map(id -> ingrediente), numReceitas: quantas vezes multiplicar
+export function calcularReceitaPadrao(itensReceita, ingredientesById, numReceitas) {
+  function doComponente(componente) {
+    let custoTotal = 0, pesoTotal = 0;
+    for (const item of itensReceita) {
+      if (item.componente !== componente) continue;
+      const ing = ingredientesById.get(item.ingrediente_id);
+      if (!ing) continue;
+      const peso = Number(item.quantidade_g) * numReceitas;
+      pesoTotal += peso;
+      custoTotal += peso * custoPorGrama(ing);
+    }
+    return { custoTotal, pesoTotal, custoPorG: pesoTotal > 0 ? custoTotal / pesoTotal : 0 };
+  }
+  return { massa: doComponente('massa'), calda: doComponente('calda') };
+}
+
+const MAX_COMBINACOES_EXPLORADAS = 20000;
+
+// Gera combinações viáveis de produção (quantos pudins de cada tamanho) que
+// cabem dentro da massa/calda disponível, e calcula faturamento/custo/margem
+// de cada uma. Retorna duas listas: sem sobra (usa tudo) e com sobra (mais
+// faturamento, mesmo com resto de massa/calda).
+export function gerarSugestoesProducao({ pesoMassaTotal, pesoCaldaTotal, custoGMassa, custoGCalda, indiretoTotal, tamanhos }) {
+  const ordenados = [...tamanhos].sort((a, b) => Number(b.gramas_massa) - Number(a.gramas_massa));
+  const combos = [];
+  let contador = 0;
+
+  function recurse(idx, massaRestante, caldaRestante, atual) {
+    if (contador > MAX_COMBINACOES_EXPLORADAS) return;
+    if (idx === ordenados.length) {
+      if (atual.some((a) => a.quantidade > 0)) combos.push(atual);
+      return;
+    }
+    const t = ordenados[idx];
+    const massaOk = Number(t.gramas_massa) > 0 ? Math.floor(massaRestante / Number(t.gramas_massa)) : Infinity;
+    const caldaOk = Number(t.gramas_calda) > 0 ? Math.floor(caldaRestante / Number(t.gramas_calda)) : Infinity;
+    const maxQtd = Math.max(0, Math.min(massaOk, caldaOk));
+    for (let q = 0; q <= maxQtd; q++) {
+      contador++;
+      if (contador > MAX_COMBINACOES_EXPLORADAS) break;
+      recurse(
+        idx + 1,
+        massaRestante - q * Number(t.gramas_massa),
+        caldaRestante - q * Number(t.gramas_calda),
+        [...atual, { tamanho: t, quantidade: q }],
+      );
+    }
+  }
+
+  recurse(0, pesoMassaTotal, pesoCaldaTotal, []);
+
+  const avaliados = combos.map((combo) => {
+    const massaUsada = combo.reduce((s, c) => s + c.quantidade * Number(c.tamanho.gramas_massa), 0);
+    const caldaUsada = combo.reduce((s, c) => s + c.quantidade * Number(c.tamanho.gramas_calda), 0);
+    const gramasProduzidas = massaUsada + caldaUsada;
+    const custoIndiretoG = gramasProduzidas > 0 ? indiretoTotal / gramasProduzidas : 0;
+
+    let faturamento = 0, custoTotal = 0;
+    combo.forEach((c) => {
+      const custoUnit = calcularCustoTamanho({
+        gramasMassa: Number(c.tamanho.gramas_massa),
+        gramasCalda: Number(c.tamanho.gramas_calda),
+        custoGMassa, custoGCalda, custoIndiretoG,
+        custoEmbalagem: Number(c.tamanho.custo_embalagem) || 0,
+      });
+      faturamento += c.quantidade * Number(c.tamanho.preco_venda);
+      custoTotal += c.quantidade * custoUnit;
+    });
+
+    return {
+      itens: combo.filter((c) => c.quantidade > 0).map((c) => ({ tamanho_id: c.tamanho.id, tamanho: c.tamanho, quantidade: c.quantidade })),
+      massaUsada, caldaUsada,
+      sobraMassa: pesoMassaTotal - massaUsada,
+      sobraCalda: pesoCaldaTotal - caldaUsada,
+      totalPudins: combo.reduce((s, c) => s + c.quantidade, 0),
+      faturamento, custoTotal,
+      margem: faturamento - custoTotal,
+    };
+  });
+
+  const semSobra = avaliados
+    .filter((c) => c.sobraMassa < 0.01 && c.sobraCalda < 0.01)
+    .sort((a, b) => b.faturamento - a.faturamento)
+    .slice(0, 5);
+
+  const comSobra = avaliados
+    .filter((c) => c.sobraMassa >= 0.01 || c.sobraCalda >= 0.01)
+    .sort((a, b) => b.faturamento - a.faturamento)
+    .slice(0, 5);
+
+  return { semSobra, comSobra, truncado: contador > MAX_COMBINACOES_EXPLORADAS };
+}
+
 export function fmtMoeda(n) {
   return (Number(n) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }

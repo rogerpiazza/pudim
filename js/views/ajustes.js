@@ -1,7 +1,8 @@
 import { listIngredientes, createIngrediente, deleteIngrediente } from '../api/ingredientes.js';
 import { listTamanhos, createTamanho, deleteTamanho } from '../api/tamanhos.js';
 import { getConfig, upsertConfig } from '../api/configCustos.js';
-import { fmtMoeda } from '../calc.js';
+import { listReceitaPadrao, addReceitaPadraoItem, deleteReceitaPadraoItem } from '../api/receitaPadrao.js';
+import { fmtMoeda, fmtNumero } from '../calc.js';
 import { showToast, showError } from '../toast.js';
 
 export async function renderAjustes(container) {
@@ -48,6 +49,41 @@ export async function renderAjustes(container) {
       <button class="btn-primary btn-block" id="btn-novo-ing" style="margin-top:12px">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
         Novo ingrediente
+      </button>
+    </div>
+
+    <div class="config-section">
+      <h2>Receita padrão</h2>
+      <p style="font-size:13px;color:var(--text-2);margin-bottom:12px">A receita fixa usada em toda fornada. Na tela de Fornadas você só informa quantas vezes fez essa receita, e o custo é multiplicado automaticamente.</p>
+      <div id="receita-list"><div class="loading-state">Carregando…</div></div>
+      <div class="form-panel" id="form-receita">
+        <div class="card">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">Ingrediente</label>
+              <select id="receita-ingrediente"></select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Componente</label>
+              <select id="receita-componente">
+                <option value="massa">Massa</option>
+                <option value="calda">Calda</option>
+              </select>
+            </div>
+            <div class="form-group full">
+              <label class="form-label">Quantidade (g)</label>
+              <input type="number" id="receita-qtd" min="0" step="0.1">
+            </div>
+            <div class="form-actions">
+              <button class="btn-primary" id="receita-salvar">Adicionar à receita</button>
+              <button class="btn-ghost" id="receita-cancelar">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <button class="btn-primary btn-block" id="btn-novo-receita" style="margin-top:12px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        Adicionar item à receita
       </button>
     </div>
 
@@ -101,6 +137,7 @@ export async function renderAjustes(container) {
   `;
 
   setupIngredientesSection(container);
+  setupReceitaPadraoSection(container);
   setupTarifasSection(container);
   setupTamanhosSection(container);
 }
@@ -196,12 +233,112 @@ async function loadIngredientes(container) {
   }
 }
 
+async function setupReceitaPadraoSection(container) {
+  const formPanel = container.querySelector('#form-receita');
+  const ingSelect = container.querySelector('#receita-ingrediente');
+
+  container.querySelector('#btn-novo-receita').addEventListener('click', async () => {
+    const opening = !formPanel.classList.contains('show');
+    formPanel.classList.toggle('show');
+    if (opening) {
+      try {
+        const ingredientes = await listIngredientes();
+        ingSelect.innerHTML = ingredientes.map((i) => `<option value="${i.id}">${escapeHtml(i.nome)}</option>`).join('');
+      } catch (err) {
+        showError(err, 'Não foi possível carregar ingredientes');
+      }
+    }
+  });
+  container.querySelector('#receita-cancelar').addEventListener('click', () => formPanel.classList.remove('show'));
+
+  container.querySelector('#receita-salvar').addEventListener('click', async () => {
+    const ingredienteId = ingSelect.value;
+    const componente = container.querySelector('#receita-componente').value;
+    const qtd = Number(container.querySelector('#receita-qtd').value);
+
+    if (!ingredienteId) { showToast('Cadastre um ingrediente primeiro', 'error'); return; }
+    if (!(qtd > 0)) { showToast('Quantidade deve ser maior que zero', 'error'); return; }
+
+    try {
+      await addReceitaPadraoItem({ ingrediente_id: ingredienteId, componente, quantidade_g: qtd });
+      showToast('Item adicionado à receita');
+      formPanel.classList.remove('show');
+      container.querySelector('#receita-qtd').value = '';
+      await loadReceitaPadrao(container);
+    } catch (err) {
+      showError(err, 'Não foi possível adicionar o item');
+    }
+  });
+
+  loadReceitaPadrao(container);
+}
+
+async function loadReceitaPadrao(container) {
+  const listEl = container.querySelector('#receita-list');
+  listEl.innerHTML = '<div class="loading-state">Carregando…</div>';
+  try {
+    const itens = await listReceitaPadrao();
+    if (!itens.length) {
+      listEl.innerHTML = '<div class="empty-action">Nenhum item cadastrado. Adicione os ingredientes fixos da massa e da calda.</div>';
+      return;
+    }
+    const massa = itens.filter((i) => i.componente === 'massa');
+    const calda = itens.filter((i) => i.componente === 'calda');
+    const totalMassa = massa.reduce((s, i) => s + Number(i.quantidade_g), 0);
+    const totalCalda = calda.reduce((s, i) => s + Number(i.quantidade_g), 0);
+
+    function itemRow(i) {
+      return `
+        <div class="ing-card" data-id="${i.id}">
+          <div class="ing-card-info">
+            <div class="ing-card-name">${escapeHtml(i.ingrediente_nome)}</div>
+            <div class="ing-card-detail">${fmtNumero(i.quantidade_g, 0)}g &middot; ${fmtMoeda(i.custo_item)}</div>
+          </div>
+          <div class="ing-card-actions">
+            <button class="icon-btn receita-del" title="Remover">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    listEl.innerHTML = `
+      <div class="detail-section" style="margin-top:0">
+        <h4>Massa (${fmtNumero(totalMassa, 0)}g por receita)</h4>
+        ${massa.map(itemRow).join('') || '<div class="empty-action">Nenhum item.</div>'}
+      </div>
+      <div class="detail-section">
+        <h4>Calda (${fmtNumero(totalCalda, 0)}g por receita)</h4>
+        ${calda.map(itemRow).join('') || '<div class="empty-action">Nenhum item.</div>'}
+      </div>
+    `;
+
+    listEl.querySelectorAll('.receita-del').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const card = btn.closest('.ing-card');
+        try {
+          await deleteReceitaPadraoItem(card.dataset.id);
+          showToast('Item removido');
+          await loadReceitaPadrao(container);
+        } catch (err) {
+          showError(err, 'Não foi possível remover o item');
+        }
+      });
+    });
+  } catch (err) {
+    showError(err, 'Não foi possível carregar a receita padrão');
+    listEl.innerHTML = '<div class="empty-action">Erro ao carregar.</div>';
+  }
+}
+
 async function setupTarifasSection(container) {
   const formEl = container.querySelector('#tarifas-form');
   try {
     const config = await getConfig() || {
       tarifa_kwh: 0, potencia_forno_w: 0, tarifa_agua_m3: 0, litros_por_lavagem: 0,
       preco_botijao: 0, peso_botijao_kg: 13, consumo_gas_kg_h: 0,
+      tempo_forno_padrao_min: 0, tempo_fogao_padrao_min: 0, litros_agua_padrao: 0,
     };
     formEl.innerHTML = `
       <div class="form-group">
@@ -232,6 +369,21 @@ async function setupTarifasSection(container) {
         <label class="form-label">Consumo gás (kg/h)</label>
         <input type="number" id="cfg-consumo-gas" min="0" step="0.001" value="${config.consumo_gas_kg_h}">
       </div>
+      <div class="form-group full" style="border-top:1px solid var(--border-light);padding-top:12px;margin-top:4px">
+        <label class="form-label" style="font-weight:600">Tempo padrão por 1 receita (pré-preenche a Nova Fornada)</label>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Forno (min)</label>
+        <input type="number" id="cfg-tempo-forno-padrao" min="0" step="1" value="${config.tempo_forno_padrao_min}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Fogão (min)</label>
+        <input type="number" id="cfg-tempo-fogao-padrao" min="0" step="1" value="${config.tempo_fogao_padrao_min}">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Água (L)</label>
+        <input type="number" id="cfg-litros-agua-padrao" min="0" step="0.1" value="${config.litros_agua_padrao}">
+      </div>
       <div class="form-group full">
         <button class="btn-primary btn-block" id="cfg-salvar">Salvar tarifas</button>
       </div>
@@ -246,6 +398,9 @@ async function setupTarifasSection(container) {
         preco_botijao: Number(formEl.querySelector('#cfg-botijao').value) || 0,
         peso_botijao_kg: Number(formEl.querySelector('#cfg-peso-botijao').value) || 13,
         consumo_gas_kg_h: Number(formEl.querySelector('#cfg-consumo-gas').value) || 0,
+        tempo_forno_padrao_min: Number(formEl.querySelector('#cfg-tempo-forno-padrao').value) || 0,
+        tempo_fogao_padrao_min: Number(formEl.querySelector('#cfg-tempo-fogao-padrao').value) || 0,
+        litros_agua_padrao: Number(formEl.querySelector('#cfg-litros-agua-padrao').value) || 0,
       };
       try {
         await upsertConfig(payload);
