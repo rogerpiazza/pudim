@@ -20,3 +20,13 @@ export async function marcarPago(id) {
   const { error } = await supabase.from('vendas').update({ pago: true, data_pagamento: hoje }).eq('id', id);
   if (error) throw error;
 }
+
+export async function updateVenda(id, payload) {
+  const { error } = await supabase.from('vendas').update(payload).eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteVenda(id) {
+  const { error } = await supabase.from('vendas').delete().eq('id', id);
+  if (error) throw error;
+}

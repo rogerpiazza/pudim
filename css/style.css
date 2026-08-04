@@ -273,6 +273,18 @@ main { flex: 1; overflow-y: auto; overflow-x: hidden; padding-bottom: 80px; min-
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
 #toast.error { background: var(--negative); color: #fff; }
 
+.btn-danger { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 20px; background: var(--negative); color: #fff; border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; transition: opacity 0.15s; }
+.btn-danger:hover { opacity: 0.88; }
+
+.modal-overlay { position: fixed; inset: 0; background: rgba(11,11,11,0.45); display: none; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
+.modal-overlay.show { display: flex; }
+.modal-card { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-md); padding: 24px; max-width: 380px; width: 100%; }
+.modal-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+.modal-message { font-size: 14px; color: var(--text-2); line-height: 1.5; margin-bottom: 20px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+.card-actions-row { display: flex; gap: 4px; flex-shrink: 0; }
+
 @media (min-width: 768px) {
   #sidebar { display: flex; }
   main { margin-left: 240px; padding-bottom: 24px; }

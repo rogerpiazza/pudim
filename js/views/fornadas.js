@@ -1,4 +1,4 @@
-import { listFornadas, getFornadaDetalhe, createFornadaCompleta } from '../api/fornadas.js';
+import { listFornadas, getFornadaDetalhe, createFornadaCompleta, deleteFornada } from '../api/fornadas.js';
 import { listIngredientes } from '../api/ingredientes.js';
 import { listTamanhos } from '../api/tamanhos.js';
 import { getConfig } from '../api/configCustos.js';
@@ -8,6 +8,8 @@ import {
   calcularCustoTamanho, calcularMargem, gerarSugestoesProducao, fmtMoeda, fmtNumero,
 } from '../calc.js';
 import { showToast, showError } from '../toast.js';
+import { confirmDialog } from '../confirmModal.js';
+import { TRASH_ICON } from '../icons.js';
 
 let ingredientesCache = [];
 let tamanhosCache = [];
@@ -370,6 +372,7 @@ async function loadFornadasList(container) {
             <div><span class="fornada-id">#${num}</span><span class="fornada-date">${dataFmt}</span></div>
             <div style="display:flex;align-items:center;gap:12px">
               <span class="fornada-summary" data-summary></span>
+              <button class="icon-btn fornada-del" title="Excluir fornada">${TRASH_ICON}</button>
               <span class="fornada-chevron">▾</span>
             </div>
           </div>
@@ -381,11 +384,25 @@ async function loadFornadasList(container) {
     listEl.querySelectorAll('.fornada-card').forEach((card) => {
       const header = card.querySelector('.fornada-header');
       let loaded = false;
-      header.addEventListener('click', async () => {
+      header.addEventListener('click', async (e) => {
+        if (e.target.closest('.fornada-del')) return;
         card.classList.toggle('open');
         if (card.classList.contains('open') && !loaded) {
           loaded = true;
           await loadFornadaDetail(card);
+        }
+      });
+
+      card.querySelector('.fornada-del').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const ok = await confirmDialog({ message: 'Excluir esta fornada? Os ingredientes lançados e a produção registrada também serão apagados. Essa ação não pode ser desfeita.' });
+        if (!ok) return;
+        try {
+          await deleteFornada(card.dataset.id);
+          showToast('Fornada excluída');
+          await loadFornadasList(container);
+        } catch (err) {
+          showError(err, 'Não foi possível excluir a fornada');
         }
       });
     });

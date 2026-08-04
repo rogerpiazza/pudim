@@ -16,3 +16,13 @@ export async function createCliente(nome, telefone = null) {
   if (error) throw error;
   return data;
 }
+
+export async function updateCliente(id, payload) {
+  const { error } = await supabase.from('clientes').update(payload).eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteCliente(id) {
+  const { error } = await supabase.from('clientes').delete().eq('id', id);
+  if (error) throw error;
+}

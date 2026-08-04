@@ -6,6 +6,12 @@ export async function listFornadas() {
   return data;
 }
 
+export async function deleteFornada(id) {
+  // fornada_itens e fornada_producao têm "on delete cascade" — somem junto.
+  const { error } = await supabase.from('fornadas').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function getFornadaDetalhe(fornadaId) {
   const [itensRes, producaoRes, custosRes] = await Promise.all([
     supabase.from('vw_fornada_itens_custo').select('*').eq('fornada_id', fornadaId),
