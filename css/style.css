@@ -151,6 +151,10 @@ main { flex: 1; overflow-y: auto; overflow-x: hidden; padding-bottom: 80px; min-
 .stat-value.clr-pos { color: var(--positive); }
 .stat-value.clr-warn { color: var(--warning); }
 .stat-value.clr-neg { color: var(--negative); }
+.stat-sub { display: block; margin-top: 4px; font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.stat-sub strong { font-weight: 600; }
+.stat-sub .clr-pos { color: var(--positive); }
+.stat-sub .clr-neg { color: var(--negative); }
 
 .chart-grid { display: grid; grid-template-columns: 1fr; gap: 16px; margin-bottom: 16px; }
 .chart-card { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; }

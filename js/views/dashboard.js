@@ -1,6 +1,6 @@
 import { listVendas } from '../api/vendas.js';
 import { supabase } from '../supabaseClient.js';
-import { fmtMoeda } from '../calc.js';
+import { fmtMoeda, fmtNumero } from '../calc.js';
 import { barChart, donutChart, rankingChart } from '../charts.js';
 import { showError } from '../toast.js';
 
@@ -101,6 +101,7 @@ async function loadAndRenderBody(body) {
     }
 
     const lucro = faturamento - custoTotal;
+    const margem = faturamento > 0 ? (lucro / faturamento) * 100 : null;
 
     // últimos 6 meses (mesmo se período = "tudo", o gráfico mensal foca nos 6 mais recentes)
     const monthlyData = [];
@@ -130,7 +131,11 @@ async function loadAndRenderBody(body) {
       </div>
       <div class="stat-grid">
         <div class="stat-tile"><span class="stat-label">Custo total</span><span class="stat-value">${fmtMoeda(custoTotal)}</span></div>
-        <div class="stat-tile"><span class="stat-label">Lucro estimado</span><span class="stat-value ${lucro >= 0 ? 'clr-pos' : 'clr-neg'}">${fmtMoeda(lucro)}</span></div>
+        <div class="stat-tile">
+          <span class="stat-label">Lucro estimado</span>
+          <span class="stat-value ${lucro >= 0 ? 'clr-pos' : 'clr-neg'}">${fmtMoeda(lucro)}</span>
+          <span class="stat-sub">Margem <strong class="${margem === null ? '' : margem >= 0 ? 'clr-pos' : 'clr-neg'}">${margem === null ? '—' : `${fmtNumero(margem, 1)}%`}</strong></span>
+        </div>
         <div class="stat-tile"><span class="stat-label">A receber</span><span class="stat-value ${aReceber > 0 ? 'clr-warn' : ''}">${fmtMoeda(aReceber)}</span></div>
         <div class="stat-tile"><span class="stat-label">Pudins vendidos</span><span class="stat-value">${pudinsVendidos}</span></div>
       </div>
