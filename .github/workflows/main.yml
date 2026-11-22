@@ -27,6 +27,20 @@ jobs:
       - name: Configurar Pages
         uses: actions/configure-pages@v5
 
+      # O GitHub Pages deixa o navegador guardar JS/CSS em cache por ~10 min,
+      # então uma versão nova podia demorar a aparecer. Cada deploy publica os
+      # arquivos numa pasta com o hash do commit (js-abc1234/, css-abc1234/):
+      # o endereço muda e o navegador é obrigado a baixar a versão nova.
+      - name: Versionar JS/CSS (evita cache antigo)
+        run: |
+          set -euo pipefail
+          V="${GITHUB_SHA::8}"
+          mv js "js-$V"
+          mv css "css-$V"
+          sed -i "s#href=\"css/style.css\"#href=\"css-$V/style.css\"#; s#src=\"js/main.js\"#src=\"js-$V/main.js\"#" index.html
+          grep -q "css-$V/style.css" index.html
+          grep -q "js-$V/main.js" index.html
+
       - name: Upload do site (sem build — HTML/CSS/JS puro)
         uses: actions/upload-pages-artifact@v3
         with:
