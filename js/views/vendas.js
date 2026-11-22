@@ -157,11 +157,15 @@ export async function renderVendas(container) {
     const matches = termLower
       ? clientesCache.filter((c) => c.nome.toLowerCase().includes(termLower))
       : clientesCache;
-    let html = matches.slice(0, 8).map((c) => `<div class="autocomplete-item" data-id="${c.id}" data-nome="${escapeHtml(c.nome)}">${escapeHtml(c.nome)}</div>`).join('');
-    if (termLower && !clientesCache.some((c) => c.nome.toLowerCase() === termLower)) {
+    let html = '';
+    // A opção de criar fica no topo para não ser escondida pela rolagem da lista
+    // quando já existem vários clientes com parte do nome digitado.
+    if (termLower && !clientesCache.some((c) => c.nome.trim().toLowerCase() === termLower)) {
       html += `<div class="autocomplete-item create-new" data-create="${escapeHtml(term.trim())}">+ Criar cliente "${escapeHtml(term.trim())}"</div>`;
     }
+    html += matches.slice(0, 8).map((c) => `<div class="autocomplete-item" data-id="${c.id}" data-nome="${escapeHtml(c.nome)}">${escapeHtml(c.nome)}</div>`).join('');
     list.innerHTML = html;
+    list.scrollTop = 0;
     list.classList.toggle('show', html.length > 0);
   }
 
